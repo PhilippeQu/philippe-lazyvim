@@ -15,6 +15,23 @@ local function uv_project_root(path)
   return root
 end
 
+local function current_uv_project_root()
+  local file = vim.api.nvim_buf_get_name(0)
+  if file ~= "" then
+    local root = uv_project_root(file)
+    if root then
+      return root
+    end
+  end
+
+  local root = vim.fs.root(vim.fn.getcwd(), "uv.lock")
+  if root and vim.fn.filereadable(root .. "/pyproject.toml") == 1 then
+    return root
+  end
+
+  return nil
+end
+
 local function python_module_name(file, root)
   local normalized_file = vim.fs.normalize(file):gsub("\\", "/")
   local src_root = vim.fs.normalize(root .. "/src"):gsub("\\", "/") .. "/"
@@ -71,8 +88,43 @@ local function uv_buffer_task()
   }
 end
 
+local function uv_pytest_task()
+  local root = current_uv_project_root()
+  if not root then
+    vim.notify("Current buffer or cwd is not inside a uv project.", vim.log.levels.WARN)
+    return nil
+  end
+
+  return {
+    name = " uv run pytest",
+    cmd = "uv",
+    args = { "run", "pytest" },
+    cwd = root,
+    env = {
+      UV_CACHE_DIR = ".uv-cache",
+    },
+    strategy = {
+      "jobstart",
+      use_terminal = true,
+    },
+    components = { "default" },
+  }
+end
+
 local function run_uv_buffer()
   local task_spec = uv_buffer_task()
+  if not task_spec then
+    return
+  end
+
+  local overseer = require("overseer")
+  local task = overseer.new_task(task_spec)
+  task:start()
+  overseer.open({ enter = false })
+end
+
+local function run_uv_pytest()
+  local task_spec = uv_pytest_task()
   if not task_spec then
     return
   end
@@ -91,12 +143,18 @@ return {
       "OverseerToggle",
       "OverseerQuickAction",
       "UvRunBuffer",
+      "UvPytest",
     },
     keys = {
       {
         "<leader>ru",
         "<cmd>UvRunBuffer<cr>",
         desc = " Run current buffer with uv",
+      },
+      {
+        "<leader>rp",
+        "<cmd>UvPytest<cr>",
+        desc = " Run pytest with uv",
       },
     },
     opts = {},
@@ -117,14 +175,23 @@ return {
         },
       })
 
+      overseer.register_template({
+        name = " uv: pytest",
+        builder = uv_pytest_task,
+        condition = {
+          callback = function()
+            return current_uv_project_root() ~= nil
+          end,
+        },
+      })
+
       vim.api.nvim_create_user_command("UvRunBuffer", run_uv_buffer, {
         desc = " Run current Python buffer with uv",
+      })
+
+      vim.api.nvim_create_user_command("UvPytest", run_uv_pytest, {
+        desc = " Run pytest with uv",
       })
     end,
   },
 }
-
-
-
-
-
