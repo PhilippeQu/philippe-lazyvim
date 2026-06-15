@@ -138,13 +138,7 @@ end
 return {
   {
     "stevearc/overseer.nvim",
-    cmd = {
-      "OverseerRun",
-      "OverseerToggle",
-      "OverseerQuickAction",
-      "UvRunBuffer",
-      "UvPytest",
-    },
+    optional = true,
     keys = {
       {
         "<leader>ru",
@@ -157,7 +151,6 @@ return {
         desc = " Run pytest with uv",
       },
     },
-    opts = {},
     config = function(_, opts)
       local overseer = require("overseer")
       overseer.setup(opts)
