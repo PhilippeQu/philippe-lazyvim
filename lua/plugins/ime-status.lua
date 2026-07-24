@@ -5,7 +5,6 @@ local state_file = vim.fs.joinpath(state_dir, "state.txt")
 
 local current_id
 local watcher
-local poller
 local read_scheduled = false
 
 local labels = {
@@ -21,12 +20,17 @@ end
 
 local function set_state(id)
   id = id and id:match("%d+")
-  if not labels[id] or id == current_id then
-    return
+  if not labels[id] then
+    return false
+  end
+
+  if id == current_id then
+    return true
   end
 
   current_id = id
   refresh_lualine()
+  return true
 end
 
 local function read_state()
@@ -37,8 +41,7 @@ local function read_state()
 
   local value = file:read("*a")
   file:close()
-  set_state(value)
-  return true
+  return set_state(value)
 end
 
 local function schedule_read()
@@ -47,10 +50,19 @@ local function schedule_read()
   end
 
   read_scheduled = true
-  vim.defer_fn(function()
-    read_scheduled = false
-    read_state()
-  end, 20)
+  vim.schedule(function()
+    if read_state() then
+      read_scheduled = false
+      return
+    end
+
+    -- A direct overwrite can briefly expose an empty file. Retry once after
+    -- the writer has closed it; this timer exists only after a change event.
+    vim.defer_fn(function()
+      read_scheduled = false
+      read_state()
+    end, 10)
+  end)
 end
 
 local function start_watcher()
@@ -68,20 +80,13 @@ local function start_watcher()
 
   local ok = watcher:start(state_dir, {}, function(err)
     if not err then
-      vim.schedule(schedule_read)
+      schedule_read()
     end
   end)
 
   if not ok then
     watcher:close()
     watcher = nil
-  end
-
-  -- A small polling fallback covers Windows file-system events occasionally
-  -- missed when AutoHotkey atomically replaces the state file.
-  poller = uv.new_timer()
-  if poller then
-    poller:start(250, 250, vim.schedule_wrap(schedule_read))
   end
 
   vim.api.nvim_create_autocmd({ "FocusGained", "VimResume" }, {
@@ -98,13 +103,6 @@ local function start_watcher()
           watcher:close()
         end
         watcher = nil
-      end
-      if poller then
-        poller:stop()
-        if not poller:is_closing() then
-          poller:close()
-        end
-        poller = nil
       end
     end,
     desc = "Stop the Windows input method watcher",
