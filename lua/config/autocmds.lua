@@ -7,12 +7,22 @@
 -- Or remove existing autocmds by their group name (which is prefixed with `lazyvim_` for the defaults)
 -- e.g. vim.api.nvim_del_augroup_by_name("lazyvim_wrap_spell")
 
--- Keep English spell checking in Markdown, but ignore CJK characters.
+local markdown_spell = vim.api.nvim_create_augroup("user_markdown_spell", { clear = true })
+
+local function disable_markdown_spell()
+  vim.opt_local.spell = false
+  vim.opt_local.spelllang = { "en", "cjk" }
+end
+
 vim.api.nvim_create_autocmd("FileType", {
-  group = vim.api.nvim_create_augroup("user_markdown_spell", { clear = true }),
+  group = markdown_spell,
   pattern = { "markdown", "markdown.mdx" },
-  callback = function()
-    vim.opt_local.spell = true
-    vim.opt_local.spelllang = { "en", "cjk" }
-  end,
+  callback = disable_markdown_spell,
+})
+
+-- Some .mdx buffers open without a detected filetype.
+vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
+  group = markdown_spell,
+  pattern = "*.mdx",
+  callback = disable_markdown_spell,
 })
